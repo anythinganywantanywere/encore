@@ -82,6 +82,38 @@
           </div>
 
           <div class="md3-list">
+            <RippleComponent @click="openFasView" class="md3-list-item" tabindex="0">
+              <div class="flex items-center justify-between px-5 py-4">
+                <div class="flex items-center gap-4 min-w-0 flex-1">
+                  <div
+                    class="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center shrink-0"
+                  >
+                    <BugIcon class="w-5 h-5 text-on-primary-container" />
+                  </div>
+
+                  <div class="flex-1 min-w-0">
+                    <h3 class="text-sm font-medium text-on-surface">
+                      {{ $t('settings_page.fas.title') }}
+                    </h3>
+                    <p class="text-xs text-on-surface-variant mt-1 line-clamp-2">
+                      {{ $t('settings_page.fas.description') }}
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  class="w-7 h-7 rounded-full bg-surface-dim flex items-center justify-center shrink-0 ms-3"
+                >
+                  <ChevronRightIcon
+                    class="text-on-surface-variant shrink-0 rtl:rotate-180"
+                    :size="22"
+                  />
+                </div>
+              </div>
+            </RippleComponent>
+          </div>
+
+          <div class="md3-list">
             <RippleComponent @click="openLanguageView" class="md3-list-item" tabindex="0">
               <div class="flex items-center justify-between px-5 py-4">
                 <div class="flex items-center gap-4 min-w-0 flex-1">
@@ -370,6 +402,7 @@ const openLanguageView = () => router.push('/settings/language')
 const openDeviceMitigationView = () => router.push('/settings/device_mitigation')
 const openLogLvlView = () => router.push('/settings/log_level')
 const openDisableTweaksView = () => router.push('/settings/disable_tweaks')
+const openFasView = () => router.push('/settings/fas')
 const createShortcut = () => KernelSU.createShortcut()
 
 const openExportModal = () => {
@@ -379,7 +412,7 @@ const openExportModal = () => {
   showExportModal.value = true
 
   setTimeout(() => {
-    exec(`/data/adb/modules/encore/bin/encore_utility save_logs`)
+    exec(`/data/adb/modules/encore/system/bin/encore_utility save_logs`)
       .then(({ errno, stdout, stderr }) => {
         if (errno !== 0) {
           exportStatus.value = 'error'

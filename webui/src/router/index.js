@@ -8,6 +8,7 @@ import Settings from '@/views/Settings.vue'
 // Setting pages
 import LiteMode from '@/views/LiteMode.vue'
 import DisableTweaks from '@/views/DisableTweaks.vue'
+import FasToggle from '@/views/FasToggle.vue'
 import GameSettings from '@/views/GameSettings.vue'
 import LanguageSelection from '@/views/LanguageSelection.vue'
 import LogLevelSelection from '@/views/LogLevelSelection.vue'
@@ -45,6 +46,11 @@ const routes = [
     path: '/settings/disable_tweaks',
     name: 'DisableTweaks',
     component: DisableTweaks,
+  },
+  {
+    path: '/settings/fas',
+    name: 'FasToggle',
+    component: FasToggle,
   },
   {
     path: '/settings/language',

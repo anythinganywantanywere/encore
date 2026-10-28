@@ -128,7 +128,7 @@ recognize_soc() {
 
 generate_gamelist() {
   extract "$ZIPFILE" 'gamelist.txt' "$MODULE_CONFIG"
-  "$MODPATH/bin/encored" setup_gamelist "$MODULE_CONFIG/gamelist.txt"
+  "$MODPATH/system/bin/encored" setup_gamelist "$MODULE_CONFIG/gamelist.txt"
   exit_code=$?
 
   rm -f "$MODULE_CONFIG/gamelist.txt"
@@ -153,8 +153,20 @@ extract "$ZIPFILE" 'uninstall.sh' "$MODPATH"
 extract "$ZIPFILE" 'action.sh' "$MODPATH"
 extract "$ZIPFILE" 'cleanup.sh' "$MODPATH"
 extract "$ZIPFILE" 'binder_resolver.apk' "$MODPATH"
-extract "$ZIPFILE" 'bin/encore_profiler' "$MODPATH"
-extract "$ZIPFILE" 'bin/encore_utility' "$MODPATH"
+extract "$ZIPFILE" 'system/bin/encore_profiler' "$MODPATH"
+extract "$ZIPFILE" 'system/bin/encore_utility' "$MODPATH"
+# Frame Aware Scheduling components, only when the zip
+# shipped them. extract() aborts on a missing file, so
+# both are guarded: the original Encore zip has neither,
+# and a zip built for another architecture may lack
+# fas_ctl, yet must still install (FAS is optional and
+# the daemon logs its absence as a warning only).
+if unzip -l "$ZIPFILE" 'system/bin/fas_ctl' | grep -q 'fas_ctl'; then
+	extract "$ZIPFILE" 'system/bin/fas_ctl' "$MODPATH"
+fi
+if unzip -l "$ZIPFILE" 'system/lib/modules/encore_fas.ko' | grep -q 'encore_fas.ko'; then
+	extract "$ZIPFILE" 'system/lib/modules/encore_fas.ko' "$MODPATH"
+fi
 cp "$MODPATH/module.prop" "$MODPATH/module.prop.orig"
 
 # Target architecture
@@ -166,7 +178,15 @@ esac
 
 # Extract executables
 extract "$ZIPFILE" "libs/$ARCH_TMP/encored" "$TMPDIR"
-cp "$TMPDIR"/libs/"$ARCH_TMP"/* "$MODPATH/bin"
+# FAS tool for this architecture, when the zip shipped
+# one in libs/ (the per-arch path, so arm64 and armv7
+# get the right binary). Guarded like the system/bin
+# path above: a zip without it must still install, and
+# the existing cp below then copies both binaries.
+if unzip -l "$ZIPFILE" "libs/$ARCH_TMP/fas_ctl" | grep -q 'fas_ctl'; then
+	extract "$ZIPFILE" "libs/$ARCH_TMP/fas_ctl" "$TMPDIR"
+fi
+cp "$TMPDIR"/libs/"$ARCH_TMP"/* "$MODPATH/system/bin"
 rm -rf "$TMPDIR/libs"
 
 # Skip mountify
@@ -179,13 +199,21 @@ if [ "$KSU" = "true" ] || [ "$APATCH" = "true" ]; then
 
 	# symlink ourselves on $PATH
 	manager_paths="/data/adb/ap/bin /data/adb/ksu/bin"
-	BIN_PATH="/data/adb/modules/encore/bin"
+	BIN_PATH="/data/adb/modules/encore/system/bin"
 	for dir in $manager_paths; do
 		[ -d "$dir" ] && {
 			ui_print "- Creating symlink in $dir"
 			ln -sf "$BIN_PATH/encored" "$dir/encored"
 			ln -sf "$BIN_PATH/encore_profiler" "$dir/encore_profiler"
 			ln -sf "$BIN_PATH/encore_utility" "$dir/encore_utility"
+			# Check $MODPATH, not $BIN_PATH: at install time the
+		# module is still in staging, so the final path may
+		# not contain fas_ctl yet on a clean install (and an
+		# older install there has no fas_ctl at all), which
+		# made this guard fail and the symlink never created.
+		# The link target stays $BIN_PATH, the final location
+		# after the module is moved into place.
+		[ -f "$MODPATH/system/bin/fas_ctl" ] && ln -sf "$BIN_PATH/fas_ctl" "$dir/fas_ctl"
 		}
 	done
 fi
@@ -194,7 +222,7 @@ fi
 ui_print "- Extracting webroot"
 unzip -o "$ZIPFILE" "webroot/*" -d "$MODPATH" -x "*.sha256" >&2
 
-# Mitigate root detection for old versions, DO NOT REMOVE!
+# Mitigate root detection
 [ -d /data/encore ] && rm -rf /data/encore
 [ -f /data/local/tmp/encore_logo.png ] && rm -f /data/local/tmp/encore_logo.png
 
@@ -207,14 +235,14 @@ rm -rf "$MODULE_CONFIG/config"
 
 # Permission settings
 ui_print "- Permission setup"
-set_perm_recursive "$MODPATH/bin" 0 0 0755 0755
+set_perm_recursive "$MODPATH/system/bin" 0 0 0755 0755
 
 # Gamelist setup
 if [ ! -f "$MODULE_CONFIG/gamelist.json" ]; then
   ui_print "- Initializing Gamelist JSON..."
   generate_gamelist
 else
-  "$MODPATH/bin/encored" check_gamelist
+  "$MODPATH/system/bin/encored" check_gamelist
   [ $? -gt 0 ] && {
     ui_print "! Gamelist JSON is malformed, regenerating..."
     generate_gamelist

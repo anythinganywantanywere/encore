@@ -1215,3 +1215,251 @@ foreground (profile 1, `gameinfo`), game exit,
 screen-off, battery-saver, DND, or
 gamelist/config reload on a device; those are
 the next device tests, in §17 order.
+
+## §22. Level 2: encore_fas integrated, toggleable from the app (2026-10-28, host only)
+
+User chose Level 2, then revised it: FAS must be a setting
+in the Encore app, on/off by the user, not always on.
+
+- `encore_core::fas` (new): attach/detach through the
+  `fas_ctl` binary on `$PATH` via the timeout runner
+  (10 s, 64 KiB cap, separate args, no shell), never
+  by reimplementing the FAS ioctl protocol. Default
+  targets 60 and 120 fps. `FasTracker` holds at most
+  one listener, dedupes by PID, and clears on detach
+  failure. `parse_ctx_id` reads `ctx_id: <n>` from
+  `fas_ctl attach` output.
+- Daemon loop (`encored/src/main.rs`): every profile
+  application also syncs FAS, but only when the new
+  setting is on; a game application (profile 1, real
+  `gameinfo`) attaches, any other application detaches.
+  A config reload re-syncs from the current state, so
+  toggling FAS in the app attaches to the current game
+  or detaches immediately, without a Binder event and
+  without a reboot. Daemon exit (signal or module
+  update) detaches. Any FAS failure is a warning only;
+  profile application never fails because of FAS.
+- Setting: `preferences.enable_fas` in `config.json`,
+  default false, so existing users see no change until
+  they enable it. In Rust it lives on `ConfigData`, not
+  on `Preferences`, so `Preferences` still mirrors C++
+  exactly and stays under clippy's bool limit; the C++
+  daemon ignores the unknown JSON field.
+- WebUI (source only, `webui/`): `EncoreConfig` store
+  gains `isFasEnabled`/`setFas` (default false), new
+  page `FasToggle.vue` (no reboot modal, by design:
+  the daemon watches `config.json`), route
+  `/settings/fas`, a Settings list entry, and locale
+  keys in `en.json` and `id.json` only (other locales
+  fall back to English until Weblate updates them).
+  `module/webroot/` is built, not tracked, so this
+  change reaches the app only when webroot is rebuilt
+  at packaging time.
+- Installer/service: `service.sh` insmods
+  `system/lib/modules/encore_fas.ko` before the daemon,
+  logging failure to `fas_load.log` and continuing
+  without FAS. `customize.sh` extracts `fas_ctl` and
+  the `.ko` only when the zip contains them (guarded
+  `unzip -l` checks, because `extract()` aborts on a
+  missing file), and symlinks `fas_ctl` for KSU/APatch
+  when present.
+- Host gates pass: fmt, clippy `-D warnings`, tests
+  94 (90 encore_core + 4 encored, up from 89).
+  NOT device tested: no integrated module zip has been
+  built, no `.ko` for whyred exists yet (a `.ko` is
+  kernel-specific; the QEMU v6.12 `.ko` will not load
+  on whyred 4.19), and the WebUI toggle has not been
+  seen running on a device.
+
+## §23. Integrated module zip from combined source (2026-10-28, not device tested)
+
+Built after the user cancelled the remaining QEMU kernel
+builds ("tidak perlu build kernel"): a flashable module
+zip assembled from the combined source, following
+`compile_zip.sh` (not from the original zip), at
+`encore-rust-fas-module-flashable.zip` (115 files,
+3.2 MB, sha256
+8cd2a595178787bf0ba3fbdf5d44c42be70f3d45b4d75d7c10107bd788f18e52).
+
+- `libs/arm64-v8a/encored` 1,601,584 bytes and
+  `libs/armeabi-v7a/encored` 1,131,076 bytes, Rust
+  cross-build with FAS code (strings prove `enable_fas`,
+  `FAS attached/detached`, `fas_ctl` in both binaries).
+- `libs/arm64-v8a/fas_ctl` and
+  `libs/armeabi-v7a/fas_ctl`, Rust fas-ctl cross-build
+  (queueBuffer symbols in both). The armv7 tool's ELF
+  resolver is aarch64-only, so on a 32-bit device its
+  attach will fail gracefully; that is a pre-existing
+  FAS limitation, not a packaging bug.
+- Webroot rebuilt from `webui/` with npm + vite
+  (CI uses bun; the build output is the same vite
+  output): `settings/fas` and `enable_fas` strings are
+  in the built JS, and the file list matches the
+  original webroot except for new content hashes.
+- `module.prop` name "Encore Tweaks (Rust FAS test)",
+  id encore, version/versionCode unchanged from the
+  original; `service.sh` insmods a `.ko` only when
+  present and runs `encored daemon --daemonize`;
+  `customize.sh` extracts per-arch `fas_ctl` from
+  `libs/` with a guard, plus the older guarded
+  `system/bin/fas_ctl` and `.ko` paths.
+- Verification on the finished zip: structure clean
+  (META-INF and module.prop at root, no `module/`
+  prefix, no placeholders, no `.map`), all 51
+  non-sha256 files pass their `.sha256` checks
+  (0 failures), every unguarded `customize.sh`
+  extract target exists in the zip, and every binary
+  is the correct ELF PIE for its arch.
+- Deliberately absent, by design: no `.ko` in this zip,
+  because no target-kernel `.ko` was built (the user
+  cancelled kernel builds, and the QEMU v6.12 `.ko`
+  must not be shipped to devices). `service.sh`
+  skips insmod when the file is absent, and the
+  daemon logs FAS attach failures as warnings only,
+  so Encore works fully and FAS stays in fallback
+  until a `.ko` for the target kernel is built.
+  Device flash/test of this zip has not been done.
+
+## §24. Fixed zip: fas_ctl symlink guard (2026-10-28, device-found bug)
+
+Device test of the §23 zip found `/data/adb/ksu/bin/fas_ctl`
+missing, while `encored`/`encore_profiler`/`encore_utility`
+symlinks were created at install time. Cause: the guard in
+`customize.sh` checked `[ -f "$BIN_PATH/fas_ctl" ]`, the
+final module path, at install time, when the module is
+still in staging (and a previous install there has no
+`fas_ctl`), so the guard failed on a clean install and
+the symlink was never created. Fix: check
+`[ -f "$MODPATH/system/bin/fas_ctl" ]` (where the file
+was just copied during install) while keeping the link
+target as `$BIN_PATH/fas_ctl`, the final location.
+Fixed zip `encore-rust-fas-module-flashable-fixed.zip`
+(115 files, 3.2 MB, sha256
+b437efd62c3482f440f8f76b33b2384dce07dc0f3da7e105e2ee357852744117)
+differs from the §23 zip only in `customize.sh` (plus
+its regenerated `.sha256`); all 51 non-sha256 files
+pass their checks. Device re-test of the fixed zip
+(install + reboot + `ls -l /data/adb/ksu/bin/fas_ctl`)
+PASSED 2026-10-28 17:17 WIB: after reinstall + reboot,
+the symlink shows timestamp 17:15 (the fixed zip's
+install time, not the 17:12 manual symlink), target
+`/data/adb/modules/encore/system/bin/fas_ctl`.
+Symlink bug closed.
+
+## §25. FAS retry backoff (2026-10-28, device-found log spam)
+
+The §23/§24 zip, with the FAS toggle on and no `.ko`,
+logged 537 identical `FAS attach failed` warnings in
+66 seconds of gaming (about 8 per second). Cause:
+`FasTracker` stored nothing on a failed attach, and
+the daemon's watcher sync runs about every 100 ms, so
+every iteration re-spawned `fas_ctl`. Fix in
+`encore_core::fas`: the tracker now remembers the
+failed `(pid, time)` and suppresses retries for that
+PID for `FAS_RETRY_INTERVAL` (30 s); a different PID
+is not suppressed, leaving the game clears the failure
+(so a reused PID retries at once), and a success
+clears it. The warning therefore fires at most once
+per 30 s per PID, while a module loaded mid-game
+still attaches within one interval. The sync entry
+point is unchanged for callers; tests use an explicit
+`sync_with_time` so the backoff is deterministic
+without sleeping. A first version of the fix failed
+its own new test: the dedupe early-return
+(`pid == active_pid`, both `None`) made the
+game-exit clear branch unreachable; the fix
+restructures the `None` branch first, and the test
+now covers it. Host gates pass: fmt, clippy
+`-D warnings`, tests 95 (91 encore_core + 4 encored,
+up from 94). Fixed zip
+`encore-rust-fas-module-flashable-fixed2.zip`
+(115 files, 3.2 MB, sha256
+5ed80c7e5e8735ee732d590aa3e604f8ef6e12c10c2923e4a9a3b7f5b50034c3)
+differs from the §24 zip only in the two `encored`
+binaries (plus their `.sha256`); device re-test
+PASSED 2026-10-28 17:34 WIB, see §26 for the full
+quick-test results (backoff, game exit, battery
+saver, screen-off, runtime toggle, DND).
+
+## §26. Device quick tests 1-4 (2026-10-28, whyred/KernelSU, fixed2 zip)
+
+All tests below ran in a single daemon run starting
+2026-10-28 10:31:49 UTC (fixed2 zip, FAS toggle on,
+no `.ko`, so FAS attach always fails gracefully).
+All profile lines in every log show 0 rejected and
+0 failed. Times below are UTC unless noted; WIB is
+UTC+7. The daemon was never restarted during these
+tests; game process `com.mobilechess.gp` ran first
+as pid 28735 all day, then as pid 9984 after a
+restart (gameinfo uid 10200, correct; an earlier
+`28735 0` gameinfo uid 0 was transient and did not
+recur, and profiles do not depend on uid).
+
+Backoff proof (spans all tests): FAS warnings
+dropped from 537 in 66 s (§25) to at most one per
+30 s per PID. Examples: 10:32:37.775, 10:32:38.827
+(1.05 s later, a different foreground PID, allowed
+by design), 10:33:08.971 (exactly 30.14 s after the
+second warning); later sessions repeat the pattern
+with intervals 30.02-30.10 s, including a 10-minute
+silence with the toggle off (11:09:37-11:19:32).
+No `FAS attached/detached` lines, as expected with
+no `.ko` (detach is a no-op when nothing attached).
+
+Game foreground/exit: profile 1 (52 writes, 6
+missing) applied on every game foreground, profile
+2 (51 writes, 6 missing) on every exit, proven
+repeatedly (exits at 10:33:30, 10:35:42, 10:50:02,
+11:09:22, 11:29:33, 12:03:58, and others).
+
+Test 1, Battery Saver: idle + Battery Saver ON
+applied profile 3 at 10:43:06 (64 writes, 6 missing,
+0 failed), `current_profile` 3; OFF at 10:43:29
+returned to profile 2. PASSED.
+
+Test 2, screen-off: game foreground, lockscreen
+for about 2 minutes (user-reported duration). Log
+gap 10:58:19 profile 2 to 11:00:42 profile 1
+(2 min 23 s) has zero log lines in between:
+balance during lock, performance on unlock, FAS
+silent during lock. `logcat screen_toggled` gives
+no output on this ROM, so that verification method
+does not work here; the pass rests on the user's
+lock report plus the matching log gap. PASSED.
+
+Test 3, runtime FAS toggle (no reboot, no daemon
+restart): Phase A, toggle OFF: `config reloaded`
+at 11:09:25 (3 s after profile 2), `enable_fas`
+false, then profile 1 at 11:09:36 and 11:09:37
+with NO FAS warning after either, where every
+enabled session warned within 0.1-0.25 s of
+profile 1. Phase B, toggle ON: `config reloaded`
+at 11:20:07, `enable_fas` true, then profile 1 at
+11:20:51 with a warning 0.15 s later, a second
+profile 1 + warning at 11:20:52, then backoff
+warnings at 11:21:23, 11:21:53, 11:22:23, 11:22:53.
+PASSED in both directions.
+
+Test 4, DND: game `com.mobilechess.gp` has
+`enable_dnd` true (WebUI Pengaturan Game shows
+Jangan Ganggu ON, Mode Lite OFF, Tweaks ON).
+`settings get global zen_mode` was 1 (priority)
+during game sessions. A first after-exit check
+showed zen_mode still 1, but the before-game
+value had never been recorded, so that alone
+proved nothing. A controlled retest closed it:
+game exit applied profile 2 at 12:03:58,
+`current_profile` 2, `zen_mode` 0 after exit.
+PASSED (on = 1 during game, off = 0 after exit).
+
+Bonus proofs in the same logs: config reload
+works on device (`Log level changed to debug` +
+`config reloaded` at 10:41:40 and again at
+10:41:44); gamelist reload works on device
+(`gamelist reloaded: 2 games` at 11:34:10).
+
+Still NOT proven by these tests: FAS actually
+attaching/measuring frames (needs a whyred 4.19
+`.ko`; see §23), Magisk/APatch installs,
+non-Qualcomm devices, and the Rust `notify`
+(uid/gid-2000 drop, still unimplemented).

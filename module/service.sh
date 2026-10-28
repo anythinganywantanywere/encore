@@ -82,5 +82,17 @@ if [ -f "$ENABLE_PPM" ]; then
 	echo 1 >"$ENABLE_PPM"
 fi
 
+# Load encore_fas kernel module, if the module zip shipped one
+# for this kernel. A .ko is kernel-specific (vermagic and
+# symbol versions), so on a kernel it was not built for
+# insmod fails: that is expected, not fatal. Encore
+# continues without FAS in that case, and the daemon
+# logs FAS attach failures as warnings only.
+mkdir -p "$MODULE_CONFIG"
+FAS_KO="$MODDIR/system/lib/modules/encore_fas.ko"
+if [ -f "$FAS_KO" ]; then
+	insmod "$FAS_KO" 2>>"$MODULE_CONFIG/fas_load.log" || echo "encore_fas: insmod failed, continuing without FAS" >>"$MODULE_CONFIG/fas_load.log"
+fi
+
 # Start Encore Daemon
-"$MODDIR/bin/encored" daemon
+encored daemon

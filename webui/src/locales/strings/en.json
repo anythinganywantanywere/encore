@@ -69,6 +69,10 @@
     "disable_tweaks": {
       "title": "Disable Tweaks",
       "description": "Disable all performance tweaks set by Encore Tweaks"
+    },
+    "fas": {
+      "title": "Frame Aware Scheduling",
+      "description": "Measure frame timing in the kernel while gaming"
     }
   },
   "game_settings": {
@@ -105,6 +109,11 @@
     "title": "Disable Tweaks",
     "toggle_title": "Disable Tweaks",
     "brief": "When enabled, this setting turns off all built-in performance optimizations on Encore Tweaks, allowing you to use this module strictly as a host for Encore Addon modules."
+  },
+  "fas": {
+    "title": "Frame Aware Scheduling",
+    "toggle_title": "Enable Frame Aware Scheduling",
+    "brief": "When enabled, the daemon attaches Frame Aware Scheduling to a foreground game and detaches it when the game leaves. FAS only measures frame timing in the kernel; it never changes frequencies. It needs the encore_fas kernel module for your kernel: if the module cannot load, Encore keeps working without FAS. No reboot is needed; the toggle takes effect on the next game or immediately for the current game."
   },
   "device_mitigation": {
     "title": "Device Mitigation",

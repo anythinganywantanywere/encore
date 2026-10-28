@@ -56,11 +56,14 @@ use encore_core::config_store::ConfigStore;
 use encore_core::daemon_state::{DaemonState, DndAction, EvaluateInputs, ProfileApplication};
 use encore_core::daemonize::{daemonize, DaemonizeOutcome};
 use encore_core::dnd::set_dnd_default;
+use encore_core::fas::{game_pid_for_fas, FasEvent, FasTracker};
 use encore_core::file_util::{is_installed, is_json_object};
 use encore_core::log::{LogLevel, Logger, DEFAULT_MAX_LOG_BYTES, DEFAULT_MAX_ROTATED_FILES};
 use encore_core::mitigation::{parse_mitigation, DeviceInfo};
 use encore_core::module_prop_store::get_module_version;
 use encore_core::process::{is_alive, DaemonLock};
+use encore_core::process_runner::TimeoutRunner;
+use encore_core::profile::ProfileMode;
 use encore_core::profiler::{detect_soc, ProfilerOptions, Soc, SocDetection};
 use encore_core::registry::{populate_from_base, render_gamelist, GameRegistry};
 use encore_core::resolver_runner::{default_runner, run_resolver};
@@ -605,6 +608,63 @@ fn perform_application(
     }
 }
 
+/// Log FAS tracker events. A failure is a warning,
+/// never a daemon failure: FAS is optional telemetry,
+/// and the profile application that triggered it has
+/// already succeeded.
+fn log_fas_events(logger: Option<&Logger>, events: &[FasEvent]) {
+    for event in events {
+        match event {
+            FasEvent::Attached { pid, ctx_id } => {
+                log_info(
+                    logger,
+                    "encored",
+                    &format!("FAS attached to game PID {pid} (ctx {ctx_id})"),
+                );
+            }
+            FasEvent::Detached { pid, ctx_id } => {
+                log_info(
+                    logger,
+                    "encored",
+                    &format!("FAS detached from game PID {pid} (ctx {ctx_id})"),
+                );
+            }
+            FasEvent::Failed { action, reason } => {
+                log_warn(
+                    logger,
+                    "encored",
+                    &format!("FAS {action} failed: {reason}, continuing without FAS"),
+                );
+            }
+        }
+    }
+}
+
+/// Perform one profile application and then bring FAS
+/// in line with it: attach when it is a foreground
+/// game, detach when it is not. FAS runs through the
+/// `fas_ctl` binary on `$PATH`; on a host without it
+/// the sync fails with a spawn warning and the daemon
+/// continues, exactly as on a device whose kernel
+/// module did not load.
+fn apply_with_fas(
+    logger: Option<&Logger>,
+    config_dir: &Path,
+    root: &SysfsRoot,
+    application: &ProfileApplication,
+    fas_tracker: &mut FasTracker,
+    fas_enabled: bool,
+) {
+    perform_application(logger, config_dir, root, application);
+    let pid = if fas_enabled {
+        game_pid_for_fas(&application.game_info, application.profile_code)
+    } else {
+        None
+    };
+    let events = fas_tracker.sync(&TimeoutRunner, pid);
+    log_fas_events(logger, &events);
+}
+
 /// Restore DND to the user's previous state on daemon
 /// exit, when a game had requested it. This differs
 /// from C++, whose signal handler calls `_exit(0)` and
@@ -710,7 +770,11 @@ struct EvalContext<'a> {
     root: &'a SysfsRoot,
 }
 
-fn handle_binder_events(binder: &mut BinderContext, ctx: &EvalContext<'_>) {
+fn handle_binder_events(
+    binder: &mut BinderContext,
+    ctx: &EvalContext<'_>,
+    fas_tracker: &mut FasTracker,
+) {
     let config = ctx.config_store.get();
     let options = profiler_options(
         ctx.mitigation_path,
@@ -728,7 +792,14 @@ fn handle_binder_events(binder: &mut BinderContext, ctx: &EvalContext<'_>) {
     let zen_mode = binder.transport.zen_mode();
     let applications = apply_events(&mut binder.state, &mut binder.transport, zen_mode, &inputs);
     for application in &applications {
-        perform_application(ctx.logger, ctx.config_dir, ctx.root, application);
+        apply_with_fas(
+            ctx.logger,
+            ctx.config_dir,
+            ctx.root,
+            application,
+            fas_tracker,
+            config.enable_fas,
+        );
     }
 }
 
@@ -737,11 +808,22 @@ fn handle_binder_events(binder: &mut BinderContext, ctx: &EvalContext<'_>) {
 /// Startup, as in C++ `encore_main_daemon`: apply
 /// perfcommon first, then the initial evaluation
 /// (balance or powersave, with no game active).
-fn startup_application(binder: &mut BinderContext, ctx: &EvalContext<'_>) {
+fn startup_application(
+    binder: &mut BinderContext,
+    ctx: &EvalContext<'_>,
+    fas_tracker: &mut FasTracker,
+) {
     let config = ctx.config_store.get();
     let perfcommon =
         DaemonState::perfcommon_application(ctx.root, config.preferences.disable_tweaks);
-    perform_application(ctx.logger, ctx.config_dir, ctx.root, &perfcommon);
+    apply_with_fas(
+        ctx.logger,
+        ctx.config_dir,
+        ctx.root,
+        &perfcommon,
+        fas_tracker,
+        config.enable_fas,
+    );
     let options = profiler_options(
         ctx.mitigation_path,
         config.preferences.use_device_mitigation,
@@ -757,7 +839,14 @@ fn startup_application(binder: &mut BinderContext, ctx: &EvalContext<'_>) {
     };
     let zen_mode = binder.transport.zen_mode();
     if let Some(application) = binder.state.evaluate(zen_mode, &inputs) {
-        perform_application(ctx.logger, ctx.config_dir, ctx.root, &application);
+        apply_with_fas(
+            ctx.logger,
+            ctx.config_dir,
+            ctx.root,
+            &application,
+            fas_tracker,
+            config.enable_fas,
+        );
     }
 }
 
@@ -821,6 +910,32 @@ struct DaemonLoop<'a> {
     binder: &'a mut Option<BinderContext>,
 }
 
+/// Re-sync FAS after a watcher poll, for the case where
+/// a config reload toggled FAS on or off without any
+/// Binder event: attach to the foreground game only
+/// when FAS is enabled and the current profile is
+/// Performance, otherwise detach. When nothing changed
+/// this is a no-op in the tracker, so it is safe to
+/// call after every watcher poll.
+fn sync_fas_after_watcher(
+    logger: Option<&Logger>,
+    config_store: &ConfigStore,
+    binder: Option<&BinderContext>,
+    fas_tracker: &mut FasTracker,
+) {
+    let fas_pid = binder.and_then(|binder| {
+        let enabled = config_store.get().enable_fas;
+        let state = &binder.state;
+        if enabled && state.cur_mode == ProfileMode::Performance && state.active_game_pid > 0 {
+            Some(state.active_game_pid)
+        } else {
+            None
+        }
+    });
+    let events = fas_tracker.sync(&TimeoutRunner, fas_pid);
+    log_fas_events(logger, &events);
+}
+
 fn daemon_loop(args: DaemonLoop<'_>) -> ExitCode {
     let DaemonLoop {
         logger,
@@ -853,17 +968,18 @@ fn daemon_loop(args: DaemonLoop<'_>) -> ExitCode {
         log_info(logger, "encored", &format!("tracking PID {pid}"));
     }
     let root = SysfsRoot::device();
+    let mut fas_tracker = FasTracker::default();
+    let ctx = EvalContext {
+        logger,
+        registry,
+        config_store,
+        mitigation_path,
+        config_dir,
+        soc,
+        root: &root,
+    };
     if let Some(binder) = binder.as_mut() {
-        let ctx = EvalContext {
-            logger,
-            registry,
-            config_store,
-            mitigation_path,
-            config_dir,
-            soc,
-            root: &root,
-        };
-        startup_application(binder, &ctx);
+        startup_application(binder, &ctx, &mut fas_tracker);
     }
     loop {
         if let Some(pipe) = &signal_pipe {
@@ -871,21 +987,14 @@ fn daemon_loop(args: DaemonLoop<'_>) -> ExitCode {
                 if let Some(binder) = binder.as_ref() {
                     restore_dnd_on_exit(logger, &binder.state);
                 }
+                let events = fas_tracker.sync(&TimeoutRunner, None);
+                log_fas_events(logger, &events);
                 log_info(logger, "encored", "Encore Tweaks daemon exited");
                 return ExitCode::SUCCESS;
             }
         }
         if let Some(binder) = binder.as_mut() {
-            let ctx = EvalContext {
-                logger,
-                registry,
-                config_store,
-                mitigation_path,
-                config_dir,
-                soc,
-                root: &root,
-            };
-            handle_binder_events(binder, &ctx);
+            handle_binder_events(binder, &ctx, &mut fas_tracker);
         }
         if let Some(pid) = tracked_pid {
             if !is_alive(pid) {
@@ -909,8 +1018,14 @@ fn daemon_loop(args: DaemonLoop<'_>) -> ExitCode {
             binder_state,
         };
         match handle_watcher_events(&mut watch_ctx) {
-            Ok(true) => return ExitCode::SUCCESS,
-            Ok(false) => {}
+            Ok(true) => {
+                let events = fas_tracker.sync(&TimeoutRunner, None);
+                log_fas_events(logger, &events);
+                return ExitCode::SUCCESS;
+            }
+            Ok(false) => {
+                sync_fas_after_watcher(logger, config_store, binder.as_ref(), &mut fas_tracker);
+            }
             Err(error) => {
                 eprintln!("ERROR: File watcher failed: {error}");
                 return ExitCode::FAILURE;

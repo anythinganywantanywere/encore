@@ -6,6 +6,19 @@
 //! - Preferences default to `enforce_lite_mode = false`,
 //!   `use_device_mitigation = false`, `disable_tweaks = false`,
 //!   `log_level = 4`.
+//!
+//! - Level 2 integration adds one Rust-only setting,
+//!   `enable_fas = false` by default: whether the daemon
+//!   attaches Frame Aware Scheduling to foreground games.
+//!   In the JSON file it lives under
+//!   `preferences.enable_fas`, so the Encore app reads
+//!   and writes it like any other preference. In Rust it
+//!   is kept on [`ConfigData`], not on [`Preferences`]:
+//!   `Preferences` still mirrors the C++ struct exactly
+//!   (and stays under clippy's bool limit), while the
+//!   C++ daemon ignores the unknown JSON field, so a
+//!   config carrying `enable_fas` stays readable by it;
+//!   the field only takes effect under the Rust daemon.
 //! - A missing or unparsable config file makes the C++ daemon create a
 //!   default config; a non-object root returns `false` without changing
 //!   the stored config.
@@ -68,6 +81,11 @@ pub struct ConfigData {
     pub preferences: Preferences,
     /// CPU governor choices.
     pub cpu_governor: CpuGovernor,
+    /// Attach FAS to foreground games (Level 2). Off by
+    /// default, so existing users see no behaviour change
+    /// until they enable it in the Encore app settings.
+    /// Stored in JSON as `preferences.enable_fas`.
+    pub enable_fas: bool,
 }
 
 impl ConfigData {
@@ -81,6 +99,7 @@ impl ConfigData {
                 balance: default_governor.to_owned(),
                 powersave: default_governor.to_owned(),
             },
+            enable_fas: false,
         }
     }
 }
@@ -115,6 +134,7 @@ pub fn parse_config(text: &str) -> Result<ConfigData, ConfigError> {
     let mut config = ConfigData {
         preferences: Preferences::default(),
         cpu_governor: CpuGovernor::default(),
+        enable_fas: false,
     };
     if let Some(prefs) = object.get("preferences").and_then(Value::as_object) {
         if let Some(value) = prefs.get("enforce_lite_mode").and_then(Value::as_bool) {
@@ -125,6 +145,9 @@ pub fn parse_config(text: &str) -> Result<ConfigData, ConfigError> {
         }
         if let Some(value) = prefs.get("disable_tweaks").and_then(Value::as_bool) {
             config.preferences.disable_tweaks = value;
+        }
+        if let Some(value) = prefs.get("enable_fas").and_then(Value::as_bool) {
+            config.enable_fas = value;
         }
         if let Some(value) = prefs.get("log_level").and_then(Value::as_i64) {
             // Clamp to the `i32` range first, so the conversion below
@@ -162,6 +185,7 @@ pub fn render_config(config: &ConfigData) -> Result<String, serde_json::Error> {
             "use_device_mitigation": config.preferences.use_device_mitigation,
             "disable_tweaks": config.preferences.disable_tweaks,
             "log_level": config.preferences.log_level,
+            "enable_fas": config.enable_fas,
         },
         "cpu_governor": {
             "balance": config.cpu_governor.balance,

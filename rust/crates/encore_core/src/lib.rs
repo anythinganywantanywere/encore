@@ -64,6 +64,9 @@ pub mod daemon_state;
 pub mod daemonize;
 /// Do Not Disturb execution, mirroring `MiscUtility.cpp`.
 pub mod dnd;
+/// Frame Aware Scheduling control for Level 2 integration:
+/// attach `fas_ctl` to a foreground game, detach on exit.
+pub mod fas;
 /// File utilities, mirroring the small C++ helpers.
 pub mod file_util;
 /// Game list parsing, mirroring `GameRegistry::load_from_json`.

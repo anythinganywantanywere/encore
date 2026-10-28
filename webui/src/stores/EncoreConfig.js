@@ -17,6 +17,7 @@ export const useEncoreConfigStore = defineStore('encoreConfig', () => {
     () => config.value?.preferences?.use_device_mitigation ?? false,
   )
   const isDisableTweaksEnabled = computed(() => config.value?.preferences?.disable_tweaks ?? false)
+  const isFasEnabled = computed(() => config.value?.preferences?.enable_fas ?? false)
   const isLoaded = computed(() => config.value !== null)
 
   const configPath = '/data/adb/.config/encore/config.json'
@@ -64,6 +65,9 @@ export const useEncoreConfigStore = defineStore('encoreConfig', () => {
     if (config.value.preferences.disable_tweaks === undefined) {
       config.value.preferences.disable_tweaks = false
     }
+    if (config.value.preferences.enable_fas === undefined) {
+      config.value.preferences.enable_fas = false
+    }
     if (config.value.preferences.enforce_lite_mode === undefined) {
       config.value.preferences.enforce_lite_mode = false
     }
@@ -96,6 +100,11 @@ export const useEncoreConfigStore = defineStore('encoreConfig', () => {
     config.value.preferences.disable_tweaks = enabled
   }
 
+  function setFas(enabled) {
+    ensureConfigStructure()
+    config.value.preferences.enable_fas = enabled
+  }
+
   function updateConfig(newConfig) {
     if (!config.value) {
       throw new Error('Config not loaded')
@@ -123,6 +132,7 @@ export const useEncoreConfigStore = defineStore('encoreConfig', () => {
     logLevel,
     isDeviceMitigationEnabled,
     isDisableTweaksEnabled,
+    isFasEnabled,
     isLoaded,
 
     loadConfig,
@@ -131,6 +141,7 @@ export const useEncoreConfigStore = defineStore('encoreConfig', () => {
     setLogLevel,
     setDeviceMitigation,
     setDisableTweaks,
+    setFas,
     updateConfig,
   }
 })

@@ -69,6 +69,10 @@
     "disable_tweaks": {
       "title": "Matikan Tweak",
       "description": "Nonaktifkan semua penyesuaian performa yang diatur oleh Encore Tweaks"
+    },
+    "fas": {
+      "title": "Frame Aware Scheduling",
+      "description": "Ukur waktu frame di kernel saat bermain game"
     }
   },
   "game_settings": {
@@ -138,6 +142,11 @@
     "title": "Matikan Tweak",
     "toggle_title": "Matikan Tweak",
     "brief": "Saat diaktifkan, pengaturan ini akan menonaktifkan semua tweak performa bawaan pada Encore Tweaks, sehingga Anda dapat menggunakan modul ini murni sebagai host untuk modul Add-on."
+  },
+  "fas": {
+    "title": "Frame Aware Scheduling",
+    "toggle_title": "Aktifkan Frame Aware Scheduling",
+    "brief": "Saat diaktifkan, daemon akan menempelkan Frame Aware Scheduling ke game yang sedang berjalan dan melepasnya saat game keluar. FAS hanya mengukur waktu frame di kernel; FAS tidak pernah mengubah frekuensi. FAS membutuhkan modul kernel encore_fas untuk kernel Anda: jika modul tidak bisa dimuat, Encore tetap berjalan tanpa FAS. Tidak perlu reboot; toggle berlaku di game berikutnya atau langsung untuk game yang sedang berjalan."
   },
   "reboot_modal": {
     "title": "Reboot Diperlukan",
