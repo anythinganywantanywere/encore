@@ -1,8 +1,8 @@
 id=encore
 name=Encore Tweaks
-version=
-versionCode=
-author=Rem01Gaming
+version=5.2.2 (1571-47cdb70-main)
+versionCode=1571
+author=anythinganywantanywere <fork from Rem01Gaming>
 description=Special performance module for your Device.
 updateJson=https://encore.rem01gaming.dev/api/update.json
 banner=banner.webp
