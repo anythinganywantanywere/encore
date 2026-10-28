@@ -7,6 +7,14 @@
 <a href="https://encore.rem01gaming.dev"><img src="https://img.shields.io/badge/Apache-white?style=for-the-badge&logo=andela&logoColor=white&label=License&labelColor=222" alt="License"></a>
 </p>
 
+> **Note on this fork:** this is an unofficial work-in-progress fork. The
+> original project above is by Rem01Gaming — this fork adds a rewrite of
+> the `encored` daemon from C++ to Rust, in the `rust/` directory. The
+> WebUI, installer scripts, resolver APK, and config formats are
+> unchanged, and the C++ daemon is still the shipped one until device
+> parity is proven. Current status, what works, and what does not yet
+> work are documented in [rust/README.md](rust/README.md).
+
 ## About Encore Tweaks
 
 **Encore Tweaks** is a dynamic Magisk module designed to maximize your device's gaming performance while intelligently preserving battery life during everyday use. Perfect for gamers who demand smooth gameplay without compromising daily usability!

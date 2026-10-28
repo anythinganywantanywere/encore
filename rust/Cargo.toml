@@ -1,0 +1,63 @@
+# Encore Tweaks — Rust migration, Stage 1.
+#
+# Stage 1 is workspace + CI only. It does not change the behaviour of the
+# shipped C++ daemon, it does not replace `encored` in `service.sh`, and it
+# does not install anything on a device. See `rust/README.md` and
+# `rust/VERIFICATION.md`.
+#
+# Licence: Apache-2.0, as in the upstream repository. See `../LICENSE` and
+# `../NOTICE.md`. This workspace is a new, additive directory; no C++,
+# shell, WebUI, or module file was modified for Stage 1.
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/encored",
+    "crates/encore_core",
+    "crates/encore_sys",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["Encore Tweaks contributors"]
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+pedantic = { level = "warn", priority = -1 }
+
+[workspace.dependencies]
+serde_json = "1"
+thiserror = "2"
+# Stage 4 only: safe wrappers for inotify and `kill(pid, 0)`.
+# `nix` is used instead of raw `libc` calls or hand-written
+# `unsafe` FFI, so this crate can keep `#![forbid(unsafe_code)]`.
+# Features: `inotify`, `signal` for kill, `process` for Pid,
+# `fs` for the single-instance flock.
+# Stage 7 only: `encore_sys` wraps the few `nix` calls that
+# are themselves `unsafe fn` (`fork`, `sigaction`) behind
+# safe functions with `// SAFETY:` comments, so the other
+# crates can keep `#![forbid(unsafe_code)]`.
+nix = { version = "0.29", features = ["inotify", "signal", "process", "fs"] }
+# Stage 6 only: the C++ mitigation store evaluates `regex`
+# conditions with `std::regex`, and Rust's standard library
+# has no regex engine. `regex` is the maintained equivalent;
+# it is used only for mitigation conditions, never for
+# parsing untrusted input without a size limit in this crate
+# (mitigation files are root-owned config, as in C++).
+regex = "1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

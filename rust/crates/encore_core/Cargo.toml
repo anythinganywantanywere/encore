@@ -1,0 +1,17 @@
+[package]
+name = "encore_core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Pure, testable core logic for the Encore Tweaks Rust migration (Stage 1 skeleton)"
+documentation = "https://github.com/anythinganywantanywere/encore"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde_json.workspace = true
+thiserror.workspace = true
+nix.workspace = true
+regex.workspace = true
+encore_sys = { path = "../encore_sys" }

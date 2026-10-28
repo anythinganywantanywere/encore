@@ -1,0 +1,13 @@
+[package]
+name = "encored"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Encore Tweaks daemon binary — Rust migration Stage 1 skeleton, not yet a daemon replacement"
+documentation = "https://github.com/anythinganywantanywere/encore"
+
+[lints]
+workspace = true
+
+[dependencies]
+encore_core = { path = "../encore_core" }

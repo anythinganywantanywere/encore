@@ -1,0 +1,27 @@
+# cargo-deny configuration for the Encore Rust migration, Stage 1.
+#
+# The allow list below is the minimal set actually used by the crates
+# in `Cargo.lock` at Stage 1, verified by running `cargo deny check`
+# without a config and reading the rejected licenses. It is not a
+# blanket allow list:
+#
+# - MIT and Apache-2.0: serde, serde_json, itoa, memchr, proc-macro2,
+#   quote, syn, thiserror, and their transitive dependencies.
+#   Apache-2.0 also matches the upstream Encore Tweaks licence.
+# - Unlicense: one dependency is licensed "Unlicense OR MIT" (memchr
+#   family in the lockfile); allowing Unlicense here only covers that
+#   OR expression, not a sole-Unlicense crate added later without review.
+# - Unicode-3.0: unicode-ident, licensed
+#   "(MIT OR Apache-2.0) AND Unicode-3.0".
+#
+# Adding a new dependency with a licence outside this list must fail
+# this check until the list is reviewed and updated with a written
+# justification, per task guide section 3.7.
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Unlicense",
+    "Unicode-3.0",
+]
