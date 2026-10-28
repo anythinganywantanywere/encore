@@ -39,8 +39,7 @@ What this fork does, in short:
 ### Status, 28 October 2026 — tested on a real device
 
 Test device: Redmi Note 5 Pro (whyred, Snapdragon 636, LineageOS
-Android 13, KernelSU). Test module:
-`encore-rust-fas-module-flashable-fixed2.zip` (115 files, 3.2 MB).
+Android 13, KernelSU).
 
 Proven on that device, in a single daemon run:
 
